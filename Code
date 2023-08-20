@@ -1,0 +1,246 @@
+MATLAB Code:
+%%%%% COMPARING OF ALPHA WAVES %%%%%
+% Clean start
+clear;clc;
+% Picking the folder
+folderName = 'C:\Users\kashi\OneDrive\Documents\EEG motor data\eeg-motormovementimagery-dataset-1.0.0\files\S001';
+% Setting up the variable
+% File number of left/right (single) and both fists/feet:
+realBoth = [5 9 13]; %BOTH FIST
+imagineBoth = [6 10 14]; %BOTH FEET
+% -- Frequency bands: if not used, enter [] ( DO NOT change the order
+% of alpha, it is already hard coded into the 3rd as the BCI analysis)
+vBands = struct (...
+ 'delta', [0.5 3], ...
+ 'theta', [3 7], ...
+ 'alpha', [7 15], ...
+ 'beta', [15 35] ...
+);
+% -- Pwelch variables:
+window = hann(160); % used 160 since it fits the sampling rate of the EEG data
+noverlap = 160/2;
+nfft = [];
+% Reading the folder and files
+dirinfo = dir(fullfile(folderName,'*.edf'));
+% Analyze the baseline (eyes open)
+% -- Calling the baseline file
+basePath = fullfile(folderName,dirinfo(1).name);
+2
+% -- Reading the EDF file
+[edfdata, edfanot] = edfread(basePath);
+data_table = timetable2table(edfdata);
+data_cell = table2array(data_table(:,2:65));
+data = cell2mat(data_cell);
+% -- Calculating the sampling frequency
+a = data_cell{1,1};
+fs = size(a,1);
+% -- Pwelch analysis
+[psd_base,f] = pwelch(data,window,noverlap,nfft,fs);
+[bandName,meanBand_base] = psdfreq(psd_base,f,vBands);
+% -- List of channels
+colName = properties(data_table);
+chanList = colName(2:65);
+% Analyze the fists & feet (REAL)
+[meanBand_realBothT1, meanBand_realBothT2, meanBand_realBothT1_fft,
+meanBand_realBothT2_fft, meanBand_realBothT1_pwelch, meanBand_realBothT2_pwelch] =
+trialanalysis2(realBoth, vBands, folderName, dirinfo, fs, window, noverlap, nfft);
+% Analyze the fists & feet (IMAGINE)
+[meanBand_imagineBothT1, meanBand_imagineBothT2, meanBand_imagineBothT1_fft,
+meanBand_imagineBothT2_fft, meanBand_imagineBothT1_pwelch,
+meanBand_imagineBothT2_pwelch] = trialanalysis2(imagineBoth, vBands, folderName,
+dirinfo, fs, window, noverlap, nfft);
+%%%% Here we got the analysis result of T1 (fists) and T2 (feet) from each
+%%%% real and imaginery hand-gripping data. Now we will try to only use
+%%%% alpha as it depicts the motor cortex activity (mu wave). Then we
+%%%% average the alpha power of every real trial of each T1 and T2 to make
+%%%% it as the feature benchmark for the alpha power of imaginery gripping.
+
+% Sorting the alpha only
+% - RB = real single,
+% IB = imagine single,
+% ave = average
+% -- HHT
+alphaRB_T1 = alphasorting(meanBand_realBothT1);
+alphaRB_T2 = alphasorting(meanBand_realBothT2);
+aveRB_T1 = mean(alphaRB_T1);
+aveRB_T2 = mean(alphaRB_T2);
+alphaIS_T1 = alphasorting(meanBand_imagineBothT1);
+alphaIS_T2 = alphasorting(meanBand_imagineBothT2);
+% -- FFT
+alphaRB_T1_fft = alphasorting(meanBand_realBothT1_fft);
+alphaRB_T2_fft = alphasorting(meanBand_realBothT2_fft);
+aveRB_T1_fft = mean(alphaRB_T1_fft);
+2
+aveRB_T2_fft = mean(alphaRB_T2_fft);
+alphaIS_T1_fft = alphasorting(meanBand_imagineBothT1_fft);
+alphaIS_T2_fft = alphasorting(meanBand_imagineBothT2_fft);
+% -- Pwelch
+alphaRB_T1_pwelch = alphasorting(meanBand_realBothT1_pwelch);
+alphaRB_T2_pwelch = alphasorting(meanBand_realBothT2_pwelch);
+aveRB_T1_pwelch = mean(alphaRB_T1_pwelch);
+aveRB_T2_pwelch = mean(alphaRB_T2_pwelch);
+alphaIS_T1_pwelch = alphasorting(meanBand_imagineBothT1_pwelch);
+alphaIS_T2_pwelch = alphasorting(meanBand_imagineBothT2_pwelch);
+% Comparing the alpha wave of the imaginery to averaged real
+% -- HHT
+[ratioT1,percT1] = alpharatio(alphaIS_T1,alphaRB_T1);
+[ratioT2,percT2] = alpharatio(alphaIS_T2,alphaRB_T2);
+% -- FFT
+[ratioT1_fft,percT1_fft] = alpharatio(alphaIS_T1_fft,alphaRB_T1_fft);
+[ratioT2_fft,percT2_fft] = alpharatio(alphaIS_T2_fft,alphaRB_T2_fft);
+% -- Pwelch
+[ratioT1_pwelch,percT1_pwelch] = alpharatio(alphaIS_T1_pwelch,alphaRB_T1_pwelch);
+[ratioT2_pwelch,percT2_pwelch] = alpharatio(alphaIS_T2_pwelch,alphaRB_T2_pwelch);
+% Plotting
+plotting2(percT1, percT1_fft, percT1_pwelch, chanList, 'T1')
+plotting2(percT2, percT2_fft, percT2_pwelch, chanList, 'T2')
+Functions:
+function [bandName, meanBandEventT1, meanBandEventT2] = trialanalysis(fileNumber,
+vBands, folderName, dirinfo, window, noverlap, nfft)
+meanBandEventT1 = cell(1,length(fileNumber));
+meanBandEventT2 = cell(1,length(fileNumber));
+for i=1:length(fileNumber)
+ % Analyze the baseline (eyes open)
+ trialPath = fullfile(folderName,dirinfo(fileNumber(i)).name);
+ % -- Reading the EDF file
+ [edfdata, edfanot] = edfread(trialPath);
+ data_table = timetable2table(edfdata);
+ data_cell = table2array(data_table(:,2:65));
+ data = cell2mat(data_cell);
+ % -- Calculating the sampling frequency
+ a = data_cell{1,1};
+ fs = size(a,1);
+2
+
+ % -- Reading the event timetable
+ data_event = timetable2table(edfanot);
+
+ % -- Reading and processing every event (T1)
+ eventNum = size(edfanot,1);
+ latencyArr = seconds(data_event{:,1});
+ eventArr = split(data_event{:,2});
+ durationArr = seconds(data_event{:,3});
+ T1 = 1;
+ for j=1:eventNum
+ if strcmp(eventArr{j}, 'T1') == 1
+ latency = latencyArr(j)*fs;
+ duration = durationArr(j)*fs;
+ dataTrial = data(latency:latency+duration-1 , :);
+ [psd_trial,f] = pwelch(dataTrial,window,noverlap,nfft,fs);
+ [bandName,meanBand_temp] = psdfreq(psd_trial,f,vBands);
+ meanBand(:,:,T1) = meanBand_temp;
+ T1 = T1+1;
+ end
+ end
+ if exist('meanBand','var')
+ meanBandEventT1{i} = meanBand;
+ else
+ meanBandEventT1{i} = [];
+ end
+
+ % -- Reading and processing every event (T2)
+ T2 = 1;
+ for k=1:eventNum
+ if strcmp(eventArr{k},'T2') == 1
+ latency = latencyArr(k)*fs;
+ duration = durationArr(k)*fs;
+ dataTrial = data(latency:latency+duration-1 , :);
+ [psd_trial,f] = pwelch(dataTrial,window,noverlap,nfft,fs);
+ [bandName,meanBand_temp] = psdfreq(psd_trial,f,vBands);
+ meanBand2(:,:,T2) = meanBand_temp;
+ T2 = T2+1;
+ end
+ end
+ if exist('meanBand2','var')
+ meanBandEventT2{i} = meanBand2;
+ else
+ meanBandEventT2{i} = [];
+ end
+end
+end
+2. function meanBand_uV2 = hhtanalysis(dataTrial, vBands, fs)
+2
+bandVal = struct2cell(vBands);
+meanBand_uV2 = zeros(length(bandVal),size(dataTrial,2));
+for i = 1:length(bandVal)
+ % Filtering each frequency band
+ data = bandpass(dataTrial,[bandVal{i}(1) bandVal{i}(2)],fs);
+ % Processing each channel
+ for j = 1:size(dataTrial,2)
+ eeg = data(j,:);
+ % Perform HHT (EMD)
+ [hht_imf, ~] = emd(eeg);
+ hht_power = abs(hilbert(hht_imf)).^2;
+ mean_power = mean(hht_power);
+ % Convert mean power to microvolts^2 and average the IMFs
+ meanBand_uV2(i,j) = mean(mean_power / (1.0e-6)^2);
+ end
+end
+3. function [fftpower, f] = fftanalysis(dataTrial, fs)
+N = size(dataTrial,1);
+y = fft(dataTrial);
+f = fs*(0:(N/2))/N;
+% Calculating the single-sided amplitude spectrum of FFT
+for i = 1:size(y,2)
+ p = abs(y(:,i)/N);
+ p = p(1:N/2+1);
+ p(2:end-1) = 2*p(2:end-1);
+ fftpower(i,:) = p;
+end
+fftpower = transpose(fftpower);
+end
+4. %%%% t-test %%%%
+% Array of every location for each brain region
+F = [1:7 22:40];
+C = [8:21];
+T = [41:46];
+P = [47:60];
+O = [61:63];
+% T1
+aveT1 = mean(percT1);
+aveT1_fft = mean(percT1_fft);
+aveT1_pwelch = mean(percT1_pwelch);
+F_T1 = aveT1(F);
+C_T1 = aveT1(C);
+2
+T_T1 = aveT1(T);
+P_T1 = aveT1(P);
+O_T1 = aveT1(O);
+[h_cf1,p_cf1] = ttest2(C_T1,F_T1); %C vs F
+[h_ct1,p_ct1] = ttest2(C_T1,T_T1); %C vs T
+[h_cp1,p_cp1] = ttest2(C_T1,P_T1); %C vs P
+[h_co1,p_co1] = ttest2(C_T1,O_T1); %C vs O
+% T2
+aveT2 = mean(percT2);
+aveT2_fft = mean(percT2_fft);
+aveT2_pwelch = mean(percT2_pwelch);
+F_T2 = aveT2(F);
+C_T2 = aveT2(C);
+T_T2 = aveT2(T);
+P_T2 = aveT2(P);
+O_T2 = aveT2(O);
+[h_cf2,p_cf2] = ttest2(C_T2,F_T2);
+[h_ct2,p_ct2] = ttest2(C_T2,T_T2);
+[h_cp2,p_cp2] = ttest2(C_T2,P_T2);
+[h_co2,p_co2] = ttest2(C_T2,O_T2);
+p_T1 = [p_cf1 p_ct1 p_cp1 p_co1];
+p_T2 = [p_cf2 p_ct2 p_cp2 p_co2];
+% Set up data for bar chart
+means_T1 = [mean(C_T1), mean(F_T1), mean(T_T1), mean(P_T1), mean(O_T1)];
+means_T2 = [mean(C_T2), mean(F_T2), mean(T_T2), mean(P_T2), mean(O_T2)];
+sems_T1 = [std(C_T1)/sqrt(length(C_T1)), std(F_T1)/sqrt(length(F_T1)),
+std(T_T1)/sqrt(length(T_T1)), std(P_T1)/sqrt(length(P_T1)),
+std(O_T1)/sqrt(length(O_T1))];
+sems_T2 = [std(C_T2)/sqrt(length(C_T2)), std(F_T2)/sqrt(length(F_T2)),
+std(T_T2)/sqrt(length(T_T2)), std(P_T2)/sqrt(length(P_T2)),
+std(O_T2)/sqrt(length(O_T2))];
+% Plot bar chart
+figure;
+bar([means_T1' means_T2']);
+hold on;
+errorbar([1:5], means_T1, sems_T1, 'k.', 'LineWidth', 1.5);
+errorbar([1:5]+0.35, means_T2, sems_T2, 'k.', 'LineWidth', 1.5);
+xticklabels({'C', 'F', 'T', 'P', 'O'});
+ylabel('Percentage power');
+title('Comparison of central region (C) with other regions');
+legend('T1', 'T2');
