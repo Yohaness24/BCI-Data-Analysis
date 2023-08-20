@@ -94,6 +94,9 @@ alphaIS_T2_pwelch = alphasorting(meanBand_imagineBothT2_pwelch);
 % Plotting
 plotting2(percT1, percT1_fft, percT1_pwelch, chanList, 'T1')
 plotting2(percT2, percT2_fft, percT2_pwelch, chanList, 'T2')
+
+
+
 Functions:
 function [bandName, meanBandEventT1, meanBandEventT2] = trialanalysis(fileNumber,
 vBands, folderName, dirinfo, window, noverlap, nfft)
